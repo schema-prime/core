@@ -1,0 +1,1713 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cko:core:5.0.3",
+  "title": "Core Knowledge Object",
+  "description": "Canonical representation of an ingested source, its extracted structure, and its evidentiary graph. Version 5 — descriptions complete.\n\nThis schema is the whole instruction. It is sent to the encoder as a structured-output constraint — a forced tool call on Anthropic, response_format json_schema on OpenAI-shaped APIs — with no accompanying prompt. Every field description is therefore read as guidance and must resolve an ambiguity rather than restate the field name. Supplying this file as a plain attachment alongside a document is not the same thing: without the structured-output channel there is no instruction, and the model will summarise rather than emit an instance.\n\nDesign rules: (1) every derived assertion resolves to a character span in the normalised source text; (2) every derived field carries generator provenance; (3) every emitted object carries a model_card chain attesting which model produced and which model verified it; (4) if a value is present in the source but has no field here, that is a finding about this schema — record it under a ^x_ key rather than discarding it or forcing a poor fit; (5) work with a deterministic answer is not model work. Getting characters off a page and counting them are functions, not judgements. Fields marked HARNESS-COMPUTED in their descriptions are written by the pipeline and MUST NOT be authored by a model: a model asked for a figure it cannot measure will emit a plausible one, and a plausible measurement is worse than none.",
+  "type": "object",
+  "required": [
+    "id",
+    "schema_version",
+    "source",
+    "title",
+    "created_at",
+    "content_hash"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^doc_[a-z0-9_]{1,120}$",
+      "description": "Stable unique identifier. Immutable for the life of the document."
+    },
+    "tenant_id": {
+      "type": "string",
+      "description": "Owning tenant. Present from the start so multi-tenant partitioning never requires a migration."
+    },
+    "schema_version": {
+      "$ref": "#/$defs/semver",
+      "pattern": "^5\\.",
+      "description": "Version of the core contract this object was produced under. Pinned to the major version by this file: a v4 or v6 object must not validate here. No trend line crosses a schema_hash boundary, so a change here restarts the count at zero."
+    },
+    "schema_hash": {
+      "$ref": "#/$defs/hash",
+      "description": "HARNESS-COMPUTED. Digest of the exact bytes of the core schema file this object was validated against. Binds the object to its contract without requiring the operator's manifest to be reachable: a holder with the document and a candidate schema file can verify the binding unaided. Ledger transaction id and index are deliberately NOT carried here — they are lookup coordinates that can change, while a hash cannot. Required once a released hash exists for the bound schema_version."
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonic write counter. Use for optimistic concurrency control."
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "active",
+        "archived",
+        "superseded",
+        "deleted"
+      ],
+      "default": "active",
+      "description": "Lifecycle state. draft and deleted are exempt from the publication predicate below; anything else must carry a model_card chain and resolvable normalised text."
+    },
+    "superseded_by": {
+      "type": "string",
+      "description": "Document id that replaces this one. Set when a newer edition of the same source is ingested."
+    },
+    "deleted_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Set when status becomes deleted. Presence is the tombstone; the object is retained so its hashes still resolve."
+    },
+    "source": {
+      "$ref": "#/$defs/source",
+      "description": "Where this object came from and what it was. Recorded before any extraction so the origin survives discard of the original bytes."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Title as the source states it. Do not invent one; if the source carries none, omit and let a downstream label supply it."
+    },
+    "subtitle": {
+      "type": "string",
+      "description": "Secondary title line where the source distinguishes one. Not a summary."
+    },
+    "authors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/agent",
+        "description": "A party the source names as responsible for it."
+      },
+      "description": "Parties the source names as responsible for it. Not the operator, not the extracting model — those belong in model_card."
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date",
+      "description": "Publication date as stated by the source, ISO 8601. Not the ingestion date; that is created_at."
+    },
+    "language": {
+      "type": "string",
+      "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+      "description": "Primary BCP-47 tag, e.g. 'en-CA'."
+    },
+    "content_hash": {
+      "$ref": "#/$defs/hash",
+      "description": "HARNESS-COMPUTED. Hash of the raw retrieved bytes."
+    },
+    "normalized_hash": {
+      "$ref": "#/$defs/hash",
+      "description": "HARNESS-COMPUTED. Hash of normalised extracted text. All derived objects reference THIS, not content_hash — it suppresses regeneration churn from cosmetic byte changes. Normalised text is machine text, NOT a rendering of the source's typography: ligatures, discretionary hyphens and line wrapping are resolved here, so this hash must never be offered as evidence that glyph-level appearance was preserved. What was actually done to the glyphs is declared in extraction_quality.glyph_normalization."
+    },
+    "layout_hash": {
+      "$ref": "#/$defs/hash",
+      "description": "HARNESS-COMPUTED. Hash of the layout-preserving extraction that sits between the raw bytes and the normalised text — the stage that still carries coordinates, column membership and line breaks. Recorded because provenance has three layers, not two: content_hash attests to the bytes, this attests to what an extractor made of their geometry, and normalized_hash attests to the text that spans index into. Without the middle layer a reading-order error is indistinguishable from a source that genuinely read that way, because the only surviving evidence has already been flattened."
+    },
+    "layout_text_ref": {
+      "type": "string",
+      "description": "Locator for the layout-preserving extraction named by layout_hash. Optional, and separate from normalized_text_ref on purpose: a consumer auditing a suspected column-splice or caption-bleed needs the geometry, and a consumer resolving a span does not."
+    },
+    "byte_size": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "HARNESS-COMPUTED. Size of the original source bytes, before normalisation."
+    },
+    "page_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "HARNESS-COMPUTED. Pages in the original rendering. Omit for sources with no pagination rather than emitting 1."
+    },
+    "token_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "HARNESS-COMPUTED. Tokens in the normalised text. A capacity figure for retrieval planning, not a billing figure."
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/section"
+      },
+      "description": "Structural skeleton of the document in reading order. Sections carry hierarchy; passages carry retrievable text."
+    },
+    "passages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/passage"
+      },
+      "description": "Retrieval units within sections. Every passage belongs to exactly one section and carries either inline text or a locator, never both."
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entity"
+      },
+      "description": "Things the document is about, resolved to one record per thing. Repeated surface forms become mentions of a single entity, not separate entities."
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claim"
+      },
+      "description": "What the source asserts, one record per assertion, each resolving to spans in the normalised text. This is the layer a downstream agent reasons over."
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      },
+      "description": "What the source offers in support of its claims. The middle layer that makes a claim auditable rather than merely stated."
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reference"
+      },
+      "description": "Works the source cites. Bibliographic records, not the claims that cite them. A document that visibly cites other works and emits an empty references array has not been read, whatever else it contains."
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relationship"
+      },
+      "description": "Typed edges between nodes in this object. Use for links the source states, not for inferences you would like to be true."
+    },
+    "intelligence": {
+      "$ref": "#/$defs/intelligence",
+      "description": "Derived reading of the whole document — summary, topics, sentiment. Wholly generated, never quoted, and separable from the extracted layers above so a consumer can reject it without losing the object."
+    },
+    "embeddings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/embedding_ref"
+      },
+      "description": "Pointers to vector representations held elsewhere. Vectors themselves never travel in this object."
+    },
+    "classification": {
+      "$ref": "#/$defs/classification",
+      "description": "Handling and sensitivity of this object, for access decisions rather than description."
+    },
+    "extraction_quality": {
+      "$ref": "#/$defs/extraction_quality",
+      "description": "How well the original was converted to text, measured before any model read it. A low score here disqualifies attributing a poor object to the model or the schema."
+    },
+    "rights_ref": {
+      "type": "string",
+      "description": "knowledge_set_id in the companion rights schema (urn:cko:rights:1.0.0) governing commercial use of this object."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this object was first produced, ISO 8601 with timezone."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this revision was produced. Equals created_at on revision 1."
+    },
+    "normalized_text_ref": {
+      "type": "string",
+      "description": "Locator for the normalised full text that every span indexes into. Without a retrievable text, spans are unverifiable and the provenance claim of this schema is unenforceable. If absent, the normalised text is DEFINED as the ordered concatenation of passages[].text by ascending (section order, passage order), joined by a single \\n\\n. A document that omits this field and does not carry inline passage text cannot have its spans verified and must not be published."
+    },
+    "model_card": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/model_card",
+        "description": "One pass by one model. Passes are never merged: three encoders leave three cards."
+      },
+      "description": "Directed acyclic graph of pipeline passes, in execution order. Input resolution and graph acyclicity are gate conditions, not conventions. HARNESS-COMPUTED: a model does not reliably know its own version string, run id or wall-clock timings, and must not be asked to supply them."
+    },
+    "extensions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/extension",
+        "description": "A governed third-party extension block, admitted deliberately. Ungoverned experimental fields belong under ^x_ instead."
+      },
+      "description": "Named extensions attached at declared in-points. Private and experimental fields continue to live under ^x_ and are not governed."
+    }
+  },
+  "patternProperties": {
+    "^x_": {
+      "description": "Namespaced private extension point. Ungoverned by design: use for experimental and operator-private fields so they never force a major version bump. Structure intended for third parties belongs in extensions[], not here."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-.]+)?$",
+      "description": "Semantic version string, MAJOR.MINOR.PATCH. Major changes are contract breaks."
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^(sha256|sha512|blake3):[a-f0-9]{32,128}$",
+      "description": "Algorithm-prefixed digest. Prefix allows algorithm migration without a schema change."
+    },
+    "tag": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 64,
+      "description": "Short lowercase label, hyphen or underscore separated. A controlled token, not a phrase."
+    },
+    "unit_interval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "A number from 0 to 1 inclusive. Never a percentage, never a score out of 100."
+    },
+    "span": {
+      "type": "object",
+      "description": "Character range in the normalised full text. The atomic unit of provenance in this schema.",
+      "required": [
+        "char_start",
+        "char_end"
+      ],
+      "properties": {
+        "section_id": {
+          "$ref": "#/$defs/ref_section",
+          "description": "Section the range falls in, when known. Narrows the search for a consumer resolving the span."
+        },
+        "passage_id": {
+          "$ref": "#/$defs/ref_passage",
+          "description": "Passage the range falls in, when known."
+        },
+        "char_start": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Inclusive offset into the normalised text referenced by normalized_text_ref — not into the original bytes, and not into any inline text field. HARNESS-COMPUTED where the emitting pass supplies text: offsets are resolved by locating that text in the normalised string, so a model neither knows nor guesses them. A supplied text that cannot be located is a fidelity failure, not an offset failure."
+        },
+        "char_end": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Exclusive offset into the same normalised text. The substring it delimits must be the exact text this span is evidence for."
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Page in the original rendering, for a human going back to the source. Provenance only; never use it to locate text."
+        },
+        "line_start": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "First line in the original rendering, where the source is line-addressed."
+        },
+        "line_end": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Last line in the original rendering."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ref_section": {
+      "type": "string",
+      "pattern": "^sec_[a-z0-9_]{1,64}$",
+      "description": "Identifier of a section in this object. Must resolve to a record present here; a dangling reference is invalid."
+    },
+    "ref_passage": {
+      "type": "string",
+      "pattern": "^psg_[a-z0-9_]{1,64}$",
+      "description": "Identifier of a passage in this object. Must resolve to a record present here; a dangling reference is invalid."
+    },
+    "ref_entity": {
+      "type": "string",
+      "pattern": "^ent_[a-z0-9_]{1,64}$",
+      "description": "Identifier of a entity in this object. Must resolve to a record present here; a dangling reference is invalid."
+    },
+    "ref_claim": {
+      "type": "string",
+      "pattern": "^clm_[a-z0-9_]{1,64}$",
+      "description": "Identifier of a claim in this object. Must resolve to a record present here; a dangling reference is invalid."
+    },
+    "ref_evidence": {
+      "type": "string",
+      "pattern": "^evd_[a-z0-9_]{1,64}$",
+      "description": "Identifier of a evidence in this object. Must resolve to a record present here; a dangling reference is invalid."
+    },
+    "ref_reference": {
+      "type": "string",
+      "pattern": "^ref_[a-z0-9_]{1,64}$",
+      "description": "Identifier of a reference in this object. Must resolve to a record present here; a dangling reference is invalid."
+    },
+    "node_ref": {
+      "type": "string",
+      "pattern": "^(ent|clm|evd|ref|sec|psg)_[a-z0-9_]{1,64}$",
+      "description": "Typed identifier of any addressable node. Prefix encodes node type, so edges are self-describing and integrity-checkable."
+    },
+    "generator": {
+      "type": "object",
+      "description": "Provenance of a derived field. Enables targeted invalidation by model or prompt version.",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Model or tool that produced the field, as the provider names it."
+        },
+        "version": {
+          "type": "string",
+          "description": "Exact version or dated release string. 'latest' is not a version and defeats targeted invalidation."
+        },
+        "prompt_version": {
+          "type": "string",
+          "description": "Identifier of the instruction set in force. Under schema-as-instruction this is the schema_hash."
+        },
+        "run_id": {
+          "type": "string",
+          "description": "Run that produced the field, so a bad batch can be found and revoked as a set."
+        },
+        "parameters": {
+          "type": "object",
+          "description": "Decoding parameters that would change the output if altered — temperature, seed, max tokens."
+        }
+      },
+      "additionalProperties": false
+    },
+    "confidence": {
+      "type": "object",
+      "description": "Deliberately split. A single scalar conflating extraction accuracy with factual truth is both meaningless downstream and a liability: This schema attests to what a source says, not to whether the source is correct. No truth-confidence field exists by design.",
+      "properties": {
+        "extraction": {
+          "$ref": "#/$defs/unit_interval",
+          "description": "Confidence the extracted text faithfully represents the source."
+        },
+        "classification": {
+          "$ref": "#/$defs/unit_interval",
+          "description": "Confidence the assigned type/category is correct."
+        },
+        "salience": {
+          "$ref": "#/$defs/unit_interval",
+          "description": "Confidence this object is material to the source's argument."
+        }
+      },
+      "additionalProperties": false
+    },
+    "agent": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name as the source writes it. Preserve the source's form; normalisation belongs in entities."
+        },
+        "given_name": {
+          "type": "string",
+          "description": "Given name, where the source separates it."
+        },
+        "family_name": {
+          "type": "string",
+          "description": "Family name, where the source separates it."
+        },
+        "affiliation": {
+          "type": "string",
+          "description": "Institution as stated by the source at time of publication, not the party's current one."
+        },
+        "orcid": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{4}-\\d{4}-\\d{3}[\\dX]$",
+          "description": "ORCID identifier, only where the source states it. Never look one up."
+        },
+        "entity_ref": {
+          "$ref": "#/$defs/ref_entity",
+          "description": "The entity record for this party, when they also appear as a subject of the document."
+        }
+      },
+      "additionalProperties": false,
+      "description": "A named party — author, reviewer, or cited contributor. Names are preserved as the source writes them; resolution to a canonical entity happens in entities."
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "type",
+        "origin"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "website",
+            "pdf",
+            "github",
+            "journal",
+            "preprint",
+            "upload",
+            "crm",
+            "api",
+            "email",
+            "transcript",
+            "filing",
+            "press_release"
+          ],
+          "description": "What kind of thing the original was. Determines what extraction_quality figures mean: a pdf and an api response fail in different ways."
+        },
+        "origin": {
+          "type": "string",
+          "description": "Where it came from in operator terms — the uploader, the feed, the connector. Not a URL."
+        },
+        "canonical_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "The address the source itself claims as its permanent home, where it states one. A location, not identity."
+        },
+        "retrieved_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the bytes were obtained, ISO 8601. For a live web source this is the only honest fixed point."
+        },
+        "http_status": {
+          "type": "integer",
+          "description": "Status returned on retrieval, where fetched over HTTP. A 200 on a soft-404 page is worth recording."
+        },
+        "etag": {
+          "type": "string",
+          "description": "Replay as If-None-Match on re-crawl."
+        },
+        "last_modified": {
+          "type": "string",
+          "description": "Replay as If-Modified-Since on re-crawl."
+        },
+        "media_type": {
+          "type": "string",
+          "description": "MIME type as served or detected."
+        },
+        "doi": {
+          "type": "string",
+          "description": "DOI where the source carries one. Copy it; never mint or infer one."
+        },
+        "license": {
+          "type": "string",
+          "description": "SPDX identifier or free text. Gates downstream redistribution."
+        },
+        "rights_statement": {
+          "type": "string",
+          "description": "Rights as the source states them, quoted rather than interpreted. Whether those rights permit a given use is a separate decision and belongs in rights_ref."
+        },
+        "parent_id": {
+          "type": "string",
+          "description": "Document this was split or derived from. Lineage without a separate graph store."
+        }
+      },
+      "patternProperties": {
+        "^x_": {}
+      },
+      "additionalProperties": false,
+      "description": "Where the object came from and what it was, recorded at accession before any extraction, so origin survives the discard of the original bytes."
+    },
+    "section": {
+      "type": "object",
+      "required": [
+        "id",
+        "order"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ref_section",
+          "description": "Stable identifier for this section within the object."
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Reading order among siblings, zero-based. Order is document order, not importance."
+        },
+        "parent_id": {
+          "$ref": "#/$defs/ref_section",
+          "description": "Enclosing section. Omit for top-level sections."
+        },
+        "heading": {
+          "type": "string",
+          "description": "Heading text as printed. Omit where the source gives none rather than inventing a label."
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6,
+          "description": "Depth in the heading hierarchy, 1 for top level. Reflect the source's own structure, not a re-organisation of it."
+        },
+        "section_type": {
+          "enum": [
+            "abstract",
+            "body",
+            "introduction",
+            "method",
+            "results",
+            "discussion",
+            "conclusion",
+            "appendix",
+            "bibliography",
+            "footnotes",
+            "front_matter",
+            "other"
+          ],
+          "description": "Rhetorical role of the section. Choose other rather than forcing a poor fit; a high rate of other is a finding about this schema."
+        },
+        "content": {
+          "type": "string",
+          "description": "Inline text. Omit in favour of content_ref for large documents."
+        },
+        "content_ref": {
+          "type": "string",
+          "description": "Object-store key or URI for externalised text."
+        },
+        "char_start": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "HARNESS-COMPUTED. Inclusive offset of the section's first character in the normalised text."
+        },
+        "char_end": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "HARNESS-COMPUTED. Exclusive offset of the section's last character in the normalised text."
+        },
+        "char_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "HARNESS-COMPUTED. Characters in the section. Must equal char_end minus char_start."
+        },
+        "page_start": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "First page of the section in the original rendering."
+        },
+        "page_end": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Last page of the section in the original rendering."
+        }
+      },
+      "patternProperties": {
+        "^x_": {}
+      },
+      "additionalProperties": false,
+      "description": "A structural division of the document in reading order. Sections carry hierarchy and offsets; the retrievable text lives in passages."
+    },
+    "passage": {
+      "type": "object",
+      "description": "Sub-section retrieval unit. Exists for token economics: an agent requesting one claim should not pull an entire section into context. Carries either inline text or a locator, never both — dual storage drifts.\n\nA passage is a unit of MEANING, not a unit of PAGINATION. One passage per printed page is the failure this field exists to prevent: it reproduces the section-sized chunk that passages were introduced to avoid, and it makes every retrieval pull a page of unrelated matter. Segment on the source's own boundaries — a paragraph, a list, a table, a block quotation, a footnote — and let a passage run short rather than padding it to a page. Running headers, page numbers and reporter citations are furniture, not passages: drop them in normalisation rather than carrying them inline.",
+      "required": [
+        "id",
+        "section_id",
+        "order"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ref_passage",
+          "description": "Stable identifier for this passage within the object."
+        },
+        "section_id": {
+          "$ref": "#/$defs/ref_section",
+          "description": "Section this passage belongs to. Every passage has exactly one."
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Reading order within the section, zero-based. Contiguous from zero within each section: a gap means a passage was dropped after numbering, and the object no longer describes the document it claims to."
+        },
+        "passage_type": {
+          "enum": [
+            "prose",
+            "list",
+            "table",
+            "figure_caption",
+            "equation",
+            "code",
+            "quotation",
+            "abstract",
+            "footnote",
+            "heading"
+          ],
+          "description": "What kind of block this is. table matters: a table rendered as prose loses its row and column bindings, and marking it here tells a consumer the text needs different handling. There is deliberately no 'page' value — a page is not a kind of block."
+        },
+        "display_duplicate_of": {
+          "$ref": "#/$defs/ref_passage",
+          "description": "The canonical passage this one restates. Set where a document reproduces the same assertion in a second position for presentation — a pull quote lifted from the body, an abstract sentence repeated in the conclusion, a syllabus or headnote restating the text it summarises, an executive summary echoing a finding. Both passages are retained, because both exist in the source and a consumer may land on either; but the duplicate is a display artefact, not a second occurrence of the assertion. Claims bind to the canonical passage. A knowledge graph that treats both as independent source assertions double-counts, and where the two positions differ in authority — a headnote is not the opinion, an abstract is not the result — it may also promote the weaker one. Points to the canonical occurrence, never the reverse, and never to itself."
+        },
+        "text": {
+          "type": "string",
+          "description": "Inline text of the passage, verbatim from the normalised source. Use for small documents; use text_ref instead when the object would otherwise carry the whole source. Verbatim means verbatim: do not join non-contiguous sentences into one passage, do not drop quotation marks, do not silently repair the source's own wording. Each of those converts a locatable passage into an unlocatable one and destroys the provenance claim this schema exists to make."
+        },
+        "text_ref": {
+          "type": "string",
+          "description": "Object-store key or URI for the passage text held externally. Mutually exclusive with text."
+        },
+        "char_start": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "HARNESS-COMPUTED. Inclusive offset of the passage in the normalised text."
+        },
+        "char_end": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "HARNESS-COMPUTED. Exclusive offset of the passage in the normalised text. Must equal char_start plus the length of text, where text is present."
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Page in the original rendering. A passage split across a page break keeps one record and the page of its first character."
+        },
+        "token_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "HARNESS-COMPUTED. Tokens in the passage, for a consumer budgeting context before retrieval."
+        }
+      },
+      "patternProperties": {
+        "^x_": {}
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "text"
+          ],
+          "not": {
+            "required": [
+              "text_ref"
+            ]
+          }
+        },
+        {
+          "required": [
+            "text_ref"
+          ],
+          "not": {
+            "required": [
+              "text"
+            ]
+          }
+        }
+      ]
+    },
+    "entity": {
+      "type": "object",
+      "required": [
+        "id",
+        "canonical_name",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ref_entity",
+          "description": "Stable identifier for this entity within the object."
+        },
+        "canonical_name": {
+          "type": "string",
+          "description": "The single form used to refer to this entity throughout the object. Pick the source's fullest form."
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "A surface form in the source denoting this same entity."
+          },
+          "uniqueItems": true,
+          "description": "Other surface forms in the source that denote this same entity, including acronyms and short forms."
+        },
+        "type": {
+          "enum": [
+            "person",
+            "organisation",
+            "product",
+            "location",
+            "event",
+            "technology",
+            "standard",
+            "concept",
+            "metric",
+            "dataset",
+            "other"
+          ],
+          "description": "Closed vocabulary. Free-text types fragment within weeks."
+        },
+        "definition": {
+          "type": "string",
+          "description": "Definition as given by this source. Not a general-purpose definition — sources disagree, and that disagreement is signal."
+        },
+        "definition_spans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/span",
+            "description": "A range where the source defines or introduces the entity."
+          },
+          "description": "Where the source defines or introduces the entity, when it does."
+        },
+        "coined_here": {
+          "type": "boolean",
+          "description": "True if this source appears to originate the term."
+        },
+        "introduced_in": {
+          "$ref": "#/$defs/ref_section",
+          "description": "Section where the entity first appears."
+        },
+        "canonical_id": {
+          "type": "string",
+          "description": "Cross-document resolution key (Wikidata Q-number, CRM record id, internal KB id)."
+        },
+        "external_ids": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Identifiers in outside registries, only where the source states them. Never resolve one yourself."
+        },
+        "mentions": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "HARNESS-COMPUTED. Count of surface occurrences across the normalised text, resolved from canonical_name and aliases. A model estimating this figure is guessing; supply the names and let the count be measured."
+        },
+        "salience": {
+          "$ref": "#/$defs/unit_interval",
+          "description": "How central the entity is to this document, 0 to 1. A judgement, not a frequency count — this one is model work precisely because it is not the mention count."
+        },
+        "spans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/span",
+            "description": "A range where the entity appears."
+          },
+          "description": "Character ranges where the entity appears."
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence",
+          "description": "Confidence that this entity is correctly identified and resolved."
+        },
+        "extracted_by": {
+          "$ref": "#/$defs/generator"
+        }
+      },
+      "patternProperties": {
+        "^x_": {}
+      },
+      "additionalProperties": false,
+      "description": "A thing the document is about, resolved to one record per thing. Surface variants become aliases, not separate entities."
+    },
+    "claim": {
+      "type": "object",
+      "required": [
+        "id",
+        "statement",
+        "claim_type",
+        "source_status"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ref_claim",
+          "description": "Stable identifier for this claim within the object."
+        },
+        "statement": {
+          "type": "string",
+          "description": "The assertion in a single self-contained sentence. It must be intelligible without the surrounding text, because a consumer may read it alone."
+        },
+        "claim_type": {
+          "enum": [
+            "definition",
+            "thesis",
+            "derived_claim",
+            "empirical_claim",
+            "historical_claim",
+            "prediction",
+            "normative_claim",
+            "architectural_requirement",
+            "methodological_claim",
+            "unresolved_question",
+            "other"
+          ],
+          "description": "Epistemic kind. Prevents a downstream agent collapsing theory, evidence and prediction into one undifferentiated corpus. Where none fits, choose other and say why under a ^x_ key; do not invent an enum value, and do not describe a substitution you have not made."
+        },
+        "source_status": {
+          "enum": [
+            "author_asserted",
+            "author_derived",
+            "externally_cited",
+            "quoted_third_party",
+            "data_reported"
+          ],
+          "description": "Who is standing behind this claim."
+        },
+        "external_support": {
+          "enum": [
+            "none",
+            "partially_cited",
+            "fully_cited",
+            "contested"
+          ],
+          "default": "none",
+          "description": "Whether the source backs this claim with citation, and whether that backing is contested."
+        },
+        "polarity": {
+          "enum": [
+            "asserted",
+            "negated",
+            "hypothetical",
+            "quoted",
+            "attributed"
+          ],
+          "default": "asserted",
+          "description": "Orthogonal to claim_type: separates what the source argues from what it merely reports or denies. A dissent asserts its own position; negated is for a proposition the source denies, not for a position the operator disagrees with."
+        },
+        "hedge": {
+          "enum": [
+            "none",
+            "weak",
+            "moderate",
+            "strong"
+          ],
+          "description": "Degree of authorial qualification ('may', 'suggests', 'in principle'). Preserves rhetorical caution that flattening otherwise destroys."
+        },
+        "section_ref": {
+          "$ref": "#/$defs/ref_section",
+          "description": "Section the claim is made in. Must be the section containing the passages in passage_refs: a claim citing a passage from another section has been mis-sited, and where those sections differ in authority — a headnote against an opinion, an abstract against a result — the error changes what the object asserts."
+        },
+        "passage_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref_passage",
+            "description": "A passage the claim is drawn from."
+          },
+          "description": "Passages the claim is drawn from. Where a passage carries display_duplicate_of, cite the canonical passage it points to rather than the duplicate: the assertion occurs once, and citing the display copy attributes it to a position with different authority than the one that made it."
+        },
+        "spans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/span",
+            "description": "A range the claim rests on. The substring must support the statement as written."
+          },
+          "description": "Character ranges the claim rests on. Required in practice: a claim with no span is an assertion the extractor made, not something the source said."
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref_evidence",
+            "description": "An evidence record supporting this claim."
+          },
+          "description": "Evidence records supporting this claim within this object."
+        },
+        "reference_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref_reference",
+            "description": "A work cited in support of this claim."
+          },
+          "description": "Works the source cites in support of this claim."
+        },
+        "entity_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref_entity",
+            "description": "An entity this claim is about."
+          },
+          "description": "Entities this claim is about."
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence",
+          "description": "Confidence that the claim is correctly extracted and correctly typed — not confidence that the claim is true."
+        },
+        "extracted_by": {
+          "$ref": "#/$defs/generator"
+        }
+      },
+      "patternProperties": {
+        "^x_": {}
+      },
+      "additionalProperties": false,
+      "description": "A single assertion the source makes, resolvable to character spans. This is the layer a downstream agent reasons over, so each statement must stand alone."
+    },
+    "evidence": {
+      "type": "object",
+      "description": "The middle layer of claim → evidence → reference. Without it, a claim is an assertion the extractor made, not something the consumer can audit.",
+      "required": [
+        "id",
+        "kind",
+        "spans"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ref_evidence",
+          "description": "Stable identifier for this evidence record."
+        },
+        "kind": {
+          "enum": [
+            "quotation",
+            "data_point",
+            "figure",
+            "table",
+            "citation",
+            "worked_example",
+            "logical_derivation",
+            "anecdote",
+            "external_source"
+          ],
+          "description": "What form the support takes. table and data_point signal that a value has been lifted from a structure, and that its row, column and unit bindings must survive with it."
+        },
+        "excerpt": {
+          "type": "string",
+          "maxLength": 600,
+          "description": "Short verbatim excerpt. Length-capped deliberately: full-text redistribution is a licensing decision, not an extraction default."
+        },
+        "spans": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/span",
+            "description": "A range the evidence occupies."
+          },
+          "description": "Character ranges the evidence occupies. At least one is required; evidence with no location cannot be audited."
+        },
+        "reference_ref": {
+          "$ref": "#/$defs/ref_reference",
+          "description": "The cited work, when the evidence is a citation."
+        },
+        "strength": {
+          "enum": [
+            "illustrative",
+            "supporting",
+            "decisive"
+          ],
+          "description": "How much weight the source itself places on this evidence."
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence",
+          "description": "Confidence that this evidence is correctly extracted and correctly bound to its claim."
+        },
+        "extracted_by": {
+          "$ref": "#/$defs/generator",
+          "description": "Generator that produced this evidence record."
+        }
+      },
+      "patternProperties": {
+        "^x_": {}
+      },
+      "additionalProperties": false
+    },
+    "reference": {
+      "type": "object",
+      "description": "First-class bibliographic object. Citations are not entities — they carry identifiers and a stance toward the argument.",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ref_reference",
+          "description": "Stable identifier for this reference within the object."
+        },
+        "raw_string": {
+          "type": "string",
+          "description": "Bibliography line as printed. Always retain — it is the ground truth if parsing was wrong."
+        },
+        "reference_type": {
+          "enum": [
+            "journal_article",
+            "preprint",
+            "book",
+            "chapter",
+            "conference_paper",
+            "report",
+            "standard",
+            "web_page",
+            "dataset",
+            "software",
+            "patent",
+            "legislation",
+            "case_law",
+            "other"
+          ],
+          "description": "What kind of work is being cited. Choose from the source's own description of it, not from the URL. legislation covers statutes, regulations and constitutional provisions; case_law covers judicial opinions and orders."
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/agent",
+            "description": "An author of the cited work, as the citation lists them."
+          },
+          "description": "Authors of the cited work as the citation lists them."
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the cited work as the citation gives it."
+        },
+        "year": {
+          "type": "integer",
+          "description": "Publication year as cited. Where the citation gives none, omit rather than estimating."
+        },
+        "container_title": {
+          "type": "string",
+          "description": "Journal, book or proceedings title."
+        },
+        "publisher": {
+          "type": "string",
+          "description": "Publisher or venue as cited."
+        },
+        "doi": {
+          "type": "string",
+          "pattern": "^10\\.\\d{4,9}/.+$",
+          "description": "DOI as printed in the citation. Never resolve or look one up."
+        },
+        "arxiv_id": {
+          "type": "string",
+          "description": "arXiv identifier as printed."
+        },
+        "isbn": {
+          "type": "string",
+          "description": "ISBN as printed."
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL as printed in the citation."
+        },
+        "resolved_document_id": {
+          "type": "string",
+          "description": "If the cited work is itself in the corpus, its document id. Turns a citation into a traversable edge."
+        },
+        "citation_spans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/span",
+            "description": "A range where this work is cited in the text."
+          },
+          "description": "Where in the body this work is cited."
+        },
+        "stance": {
+          "enum": [
+            "supports",
+            "contrasts",
+            "extends",
+            "refutes",
+            "background",
+            "methodology",
+            "data_source",
+            "unclear"
+          ],
+          "description": "Relationship to the citing argument. Distinguishes 'builds on' from 'argues against' — a distinction commodity extraction loses."
+        },
+        "supports_claims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref_claim",
+            "description": "A claim in this object that cites this work in support."
+          },
+          "description": "Claims in this object that cite this work in support."
+        },
+        "contrasts_claims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref_claim",
+            "description": "A claim in this object that cites this work to disagree with it."
+          },
+          "description": "Claims in this object that cite this work to disagree with it. Keeping this apart from supports_claims is what stops a citation graph reading agreement where the source argued the opposite."
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence",
+          "description": "Confidence that the reference was correctly parsed from the citation."
+        },
+        "extracted_by": {
+          "$ref": "#/$defs/generator",
+          "description": "Generator that produced this reference record."
+        }
+      },
+      "patternProperties": {
+        "^x_": {}
+      },
+      "additionalProperties": false
+    },
+    "relationship": {
+      "type": "object",
+      "description": "Directed edge between any two addressable nodes. Single top-level array, not nested per-entity: one place to traverse, one place to validate.\n\nAn edge must earn its place. An edge restating what a reference record already encodes, or asserting a relation the text does not state, adds traversal cost and no information. Emit no edges rather than filler edges.",
+      "required": [
+        "id",
+        "subject_ref",
+        "predicate",
+        "object_ref"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^rel_[a-z0-9_]{1,64}$",
+          "description": "Stable identifier for this edge."
+        },
+        "subject_ref": {
+          "$ref": "#/$defs/node_ref",
+          "description": "Node the relationship starts from. Any addressable node, including a reference: the node_ref prefix set is the authority on what may appear here."
+        },
+        "predicate": {
+          "enum": [
+            "relocates_to",
+            "depends_on",
+            "occurs_at",
+            "controls",
+            "precedes",
+            "follows",
+            "hosts",
+            "contains",
+            "part_of",
+            "instance_of",
+            "alias_of",
+            "defines",
+            "measured_by",
+            "causes",
+            "enables",
+            "requires",
+            "constrains",
+            "contradicts",
+            "qualifies",
+            "extends",
+            "supports",
+            "refutes",
+            "cites",
+            "derived_from",
+            "related_to",
+            "other"
+          ],
+          "description": "The relation the source states. Record only relations the text supports; an edge you inferred is not an edge the document contains."
+        },
+        "predicate_label": {
+          "type": "string",
+          "description": "Free-text predicate. Required when predicate is 'other'; use sparingly — recurring labels should be promoted to the enum."
+        },
+        "object_ref": {
+          "$ref": "#/$defs/node_ref",
+          "description": "Node the relationship points to."
+        },
+        "spans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/span",
+            "description": "A range where the source states this relation."
+          },
+          "description": "Character ranges where the source states this relation. Without them the edge is unfalsifiable."
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref_evidence",
+            "description": "An evidence record supporting this relation."
+          },
+          "description": "Evidence records supporting this relation."
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence",
+          "description": "Confidence that the relation is correctly extracted and correctly directed."
+        },
+        "extracted_by": {
+          "$ref": "#/$defs/generator",
+          "description": "Generator that produced this edge."
+        }
+      },
+      "patternProperties": {
+        "^x_": {}
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "predicate": {
+                "const": "other"
+              }
+            },
+            "required": [
+              "predicate"
+            ]
+          },
+          "then": {
+            "required": [
+              "predicate_label"
+            ]
+          }
+        }
+      ]
+    },
+    "intelligence": {
+      "type": "object",
+      "description": "PROJECTION, not extraction. Derived analysis regenerated on its own cadence and independently perishable: stale whenever source_normalized_hash differs from the document's normalized_hash. It does not carry the durability guarantee the rest of this object carries, and consumers must check staleness before relying on it.",
+      "required": [
+        "generated_at",
+        "source_normalized_hash",
+        "generator"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "maxLength": 4000,
+          "description": "Condensed reading of the document. Generated, not quoted — a consumer who rejects generated content discards this whole block and keeps everything else."
+        },
+        "summary_type": {
+          "enum": [
+            "abstractive",
+            "extractive",
+            "author_supplied"
+          ],
+          "description": "How the summary was produced. author_supplied means the source wrote it; treat that differently from anything a model composed."
+        },
+        "key_finding_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref_claim",
+            "description": "A claim the generator judges central to the document."
+          },
+          "description": "Pointers into claims[]. Never duplicated statement text — one place to correct."
+        },
+        "relevance_tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/tag",
+            "description": "An operator-facing routing tag."
+          },
+          "description": "Operator-facing tags for routing and filtering. Not a description of the document's content."
+        },
+        "topics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "tag"
+            ],
+            "properties": {
+              "tag": {
+                "$ref": "#/$defs/tag",
+                "description": "The topic label."
+              },
+              "weight": {
+                "$ref": "#/$defs/unit_interval",
+                "description": "How strongly the document is about it, 0 to 1."
+              }
+            },
+            "additionalProperties": false,
+            "description": "A topic with a weight."
+          },
+          "description": "What the document is about, with weights. A judgement of the whole, distinct from entities, which are things named in it."
+        },
+        "open_questions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref_claim",
+            "description": "A claim typed as unresolved_question."
+          },
+          "description": "Claims in this object typed as unresolved_question, surfaced here for a reader scanning the document's gaps."
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When this block was produced, ISO 8601. It ages independently of the extracted layers."
+        },
+        "source_normalized_hash": {
+          "$ref": "#/$defs/hash",
+          "description": "Digest of the normalised text this reading was made from. If it no longer matches, this block is stale and must not be trusted."
+        },
+        "generator": {
+          "$ref": "#/$defs/generator",
+          "description": "Model that produced this block."
+        }
+      },
+      "patternProperties": {
+        "^x_": {}
+      },
+      "additionalProperties": false
+    },
+    "embedding_ref": {
+      "type": "object",
+      "description": "Metadata only — vectors live in the vector store. Allows multiple models to coexist during reindex.",
+      "required": [
+        "model",
+        "dimensions",
+        "index"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Embedding model, exactly as the provider names it. Vectors from different models are not comparable."
+        },
+        "dimensions": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Vector width, so a consumer can reject a mismatched index before querying it."
+        },
+        "index": {
+          "type": "string",
+          "description": "Index or collection where the vectors live."
+        },
+        "granularity": {
+          "enum": [
+            "document",
+            "section",
+            "passage",
+            "claim"
+          ],
+          "description": "What each vector represents. Mixing granularities in one index makes similarity scores meaningless."
+        },
+        "source_normalized_hash": {
+          "$ref": "#/$defs/hash",
+          "description": "Digest of the normalised text embedded. A mismatch means the vectors are stale."
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the vectors were produced, ISO 8601."
+        }
+      },
+      "additionalProperties": false
+    },
+    "classification": {
+      "type": "object",
+      "description": "Handling constraints. Far cheaper carried from ingest than retrofitted when a client asks.",
+      "properties": {
+        "sensitivity": {
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "restricted"
+          ],
+          "default": "internal",
+          "description": "Handling class. Governs who may receive the object, not how interesting it is."
+        },
+        "data_residency": {
+          "type": "string",
+          "pattern": "^[A-Z]{2}$",
+          "description": "ISO 3166-1 alpha-2 region the record must remain within."
+        },
+        "retention_until": {
+          "type": "string",
+          "format": "date",
+          "description": "Date after which the object should be disposed of under policy."
+        },
+        "contains_pii": {
+          "type": "boolean",
+          "description": "Whether the object carries personal data. Set true when uncertain; the cost of a false positive is a review, the cost of a false negative is a breach."
+        },
+        "embargo_until": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Datetime before which the object must not circulate, where the source imposes one."
+        }
+      },
+      "additionalProperties": false
+    },
+    "extraction_quality": {
+      "type": "object",
+      "description": "Honest self-report of pipeline reliability, MEASURED BEFORE ANY MODEL READ THE SOURCE. Downstream consumers price trust; give them the inputs.\n\nThe figures here are measurements, not impressions. coverage and source_recall are HARNESS-COMPUTED and must never be authored by a model: a model has no access to the source text it did not emit, so any figure it supplies is an estimate of its own thoroughness, which is exactly the quantity that cannot be self-assessed. Observed failures of this kind run in both directions — an arm reporting 0.18 against a measured 0.03, another declaring 1.0 on a partial read — and both are indistinguishable from honesty inside the object.",
+      "properties": {
+        "method": {
+          "enum": [
+            "native_text",
+            "ocr",
+            "hybrid",
+            "api",
+            "manual"
+          ],
+          "description": "How the text was obtained — native text layer, OCR, or a mix. Determines how far the other figures here can be trusted."
+        },
+        "extractor": {
+          "$ref": "#/$defs/generator",
+          "description": "The tool that lifted characters off the source, named and versioned. Distinct from model_card on purpose: text extraction is a deterministic function with a checkable answer, and a pipeline that cannot name the extractor it used cannot reproduce or regression-test the layer where most recall is lost. Where a model performed this step, record the model here and expect the recall figure to show it."
+        },
+        "segmentation_method": {
+          "enum": [
+            "deterministic",
+            "model",
+            "hybrid",
+            "manual"
+          ],
+          "description": "How the text was divided into sections and passages. Recorded separately from method because the two fail differently and can be fixed independently: character loss is an extractor problem, mis-segmentation is a boundary problem."
+        },
+        "ocr_confidence": {
+          "$ref": "#/$defs/unit_interval",
+          "description": "Mean OCR confidence where OCR was used, 0 to 1. Omit entirely when no OCR ran rather than emitting 1."
+        },
+        "structure_confidence": {
+          "$ref": "#/$defs/unit_interval",
+          "description": "Confidence that headings, tables and reading order survived conversion, 0 to 1. This is the figure that matters for tabular sources: characters can be perfect while row and column bindings are lost."
+        },
+        "coverage": {
+          "$ref": "#/$defs/unit_interval",
+          "description": "HARNESS-COMPUTED. Fraction of source text successfully assigned to a section."
+        },
+        "pages_no_text_layer": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "A page number, 1-based, in the original rendering."
+          },
+          "description": "HARNESS-COMPUTED. Pages of the original rendering that yielded no usable text layer — scanned plates, full-page images, advertisements, floorplans, exhibit pages. Declared rather than left implicit because a text-only pipeline reports such a page as empty and a consumer cannot tell that from a page the source left blank. Known absence is a different fact from absence, and only the first can be acted on: it tells a consumer which pages to route through a visual parser, and it tells a licensee exactly what they did not receive. An empty array asserts every page yielded text; omit the field where that was not checked."
+        },
+        "glyph_normalization": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "ligatures_expanded",
+              "discretionary_hyphens_removed",
+              "line_wrap_joined",
+              "quotes_normalized",
+              "whitespace_collapsed",
+              "control_characters_stripped",
+              "unicode_nfc",
+              "unicode_nfkc"
+            ],
+            "description": "One normalisation actually applied and verified."
+          },
+          "description": "What was actually done to the glyph stream to produce the normalised text, as a closed vocabulary of operations. Declare only what was performed AND verified: an extractor that splits a ligature into two characters rather than mapping it has not expanded it, and asserting ligatures_expanded in that case turns a conversion defect into a false warranty that survives validation. The characteristic symptom is a space inside a word ('offi cer', 'fi rst', 'workfl ow'); where surnames are affected it also silently defeats entity resolution. Verify against the source before listing an operation here, and where a normalisation was attempted but not confirmed, record it in warnings instead."
+        },
+        "source_recall": {
+          "$ref": "#/$defs/unit_interval",
+          "description": "HARNESS-COMPUTED. Fraction of the source text recoverable from this object, measured by comparing the object's text against the extracted source — n-gram recall or an equivalent deterministic measure. Distinct from coverage: coverage asks whether what was captured got filed, recall asks whether it was captured at all, and an object can file everything it holds while holding almost nothing. This is the figure that disqualifies: below the operator's gate, the object is a summary wearing an extraction's structure, no claim graph over it can be assessed, and absence within it proves nothing about the source."
+        },
+        "recall_method": {
+          "type": "string",
+          "description": "How source_recall was computed — the measure, its parameters and its canonicalisation, e.g. '8-gram shingle recall, case-folded, hyphenation joined'. Recorded because a recall figure without its method is not comparable across runs, and comparability is the entire point of measuring it."
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "A specific conversion problem observed — name what happened, not how many."
+          },
+          "description": "Specific problems observed during conversion — a table linearised, a column order inverted, a page with no text layer. Name what happened; a count communicates nothing actionable. Record only what did happen: a warning describing a correction that was not actually made is worse than silence, because it reads as diligence."
+        },
+        "human_reviewed": {
+          "type": "boolean",
+          "description": "Whether a person checked the conversion against the original."
+        },
+        "reviewed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When that review happened, ISO 8601."
+        },
+        "reviewed_by": {
+          "type": "string",
+          "description": "Who performed the review."
+        },
+        "binding_confidence": {
+          "$ref": "#/$defs/unit_interval",
+          "description": "Confidence that values lifted from tables kept their bindings — row label, column header, unit, scale and period. Distinct from character accuracy on purpose: an extraction can be character-perfect and still emit a number detached from the column that gave it meaning, which is the common failure on financial and tabular sources. Omit where the source contains no tabular matter rather than emitting a high figure that was never tested."
+        }
+      },
+      "additionalProperties": false
+    },
+    "model_card": {
+      "type": "object",
+      "description": "One pass of the extraction pipeline. Multi-model output is unattributable without this: it records which model acted, in what role, against which schema and constraint set, and over exactly which bytes.\n\nPasses form a DIRECTED ACYCLIC GRAPH, not a line. Real pipelines fan out (three models extracting the same source independently) and fan in (one pass reconciling their outputs). A linear chain cannot encode that without lying about it — a merge would have to name one input and discard the rest. Each pass therefore declares its inputs explicitly, and each input names either the source text or the prior pass whose output it consumed.\n\nDeliberately excludes cost, latency and decoding detail — those describe the operator's economics, not the document.",
+      "required": [
+        "pass_id",
+        "role",
+        "model_id",
+        "schema_version_bound",
+        "inputs",
+        "eval_status"
+      ],
+      "properties": {
+        "pass_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]{1,32}$",
+          "description": "Identifier unique within this model_card array. Referenced by other passes' inputs[].from_pass. Uniqueness is a gate condition; JSON Schema cannot express it."
+        },
+        "pass_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Execution stage, for human reading only. Passes running in PARALLEL share a stage number, so this is not unique and must never be used to reconstruct dependency. inputs[] is the authority on order."
+        },
+        "role": {
+          "enum": [
+            "generator",
+            "repair",
+            "merge",
+            "verifier",
+            "human"
+          ],
+          "description": "Closed vocabulary.\n  generator — produced a candidate extraction from the source.\n  repair    — corrected one prior candidate. One input, one output.\n  merge     — reconciled two or more candidates into one. Distinct from repair: repair fixes an output, merge adjudicates between independent outputs, and collapsing the two would erase the strongest provenance claim an ensemble pipeline can make.\n  verifier  — checked a prior pass without authoring content. Kept separate from merge on purpose: an adjudicator that also attests to its own adjudication is not a check.\n  human     — a person acted. Always recorded, never inferred.\nA document whose graph contains no verifier pass has not been verified, and says so."
+        },
+        "model_id": {
+          "type": "string",
+          "description": "Provider-qualified identifier, e.g. 'openai/gpt-5-mini'."
+        },
+        "provider": {
+          "type": "string",
+          "description": "Organisation serving the model, not the model family."
+        },
+        "model_version": {
+          "type": "string",
+          "description": "Exact version or dated release. Required for a run to be reproducible or a bad batch revocable. Written by the harness from the API response, not by the model: a model does not reliably know its own version string, and a plausible guess here silently defeats revocation."
+        },
+        "prompt_version": {
+          "type": "string",
+          "description": "Identifier of the instruction set in force. Under schema-as-instruction this is the schema_hash and there is no separate prompt."
+        },
+        "run_id": {
+          "type": "string",
+          "description": "Run that produced this object."
+        },
+        "schema_version_bound": {
+          "$ref": "#/$defs/semver",
+          "pattern": "^5\\.",
+          "description": "Schema version this pass validated against. Must match the object's schema_version at the major level: a pass bound to a different major version is drift, not a variation, and must fail the gate. A repair or merge pass bound to a different version from the generator it consumed is the same failure and fails the same way."
+        },
+        "constraint_set_id": {
+          "type": "string",
+          "description": "Identifier of the 512/CVS constraint pack applied in this pass."
+        },
+        "delivery_channel": {
+          "enum": [
+            "structured_output",
+            "forced_tool_call",
+            "prose_attachment",
+            "unknown"
+          ],
+          "description": "How this schema reached the model. Recorded because it changes what the pass's output means: under structured_output or forced_tool_call the contract is enforced by the provider and an enum violation is impossible, while under prose_attachment there is no instruction channel at all and the model will tend to summarise rather than emit an instance. An object produced by a prose_attachment pass is off-protocol, is not comparable with one produced under constraint, and should not be read as evidence about the schema or the model."
+        },
+        "inputs": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Everything this pass consumed. A generator reading the source has one input with from_pass absent. A merge reconciling three candidate extractions has three inputs, each naming its producing pass. Gate condition: every hash MUST equal either the document's normalized_hash (when from_pass is absent) or the output_hash of the named pass. A pass whose inputs do not resolve did not see what it attests to.",
+          "items": {
+            "type": "object",
+            "required": [
+              "hash"
+            ],
+            "properties": {
+              "from_pass": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,32}$",
+                "description": "pass_id of the producing pass. Absent means this input is the normalised source text itself."
+              },
+              "hash": {
+                "$ref": "#/$defs/hash",
+                "description": "Digest of exactly what was received."
+              }
+            },
+            "additionalProperties": false,
+            "description": "A digest of an input this pass consumed."
+          }
+        },
+        "output_hash": {
+          "$ref": "#/$defs/hash",
+          "description": "Digest of what this pass emitted. Referenced by any downstream pass's inputs[].hash."
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True if input exceeded the context window and was cut. Silent truncation is the most common cause of false absence."
+        },
+        "eval_status": {
+          "enum": [
+            "passed",
+            "failed",
+            "passed_with_warnings",
+            "not_evaluated",
+            "human_override"
+          ],
+          "description": "Mandatory on every pass. 'not_evaluated' is an acceptable and honest value; omission is not. A verifier pass may be a second model, a deterministic rule pack, or a human — the role says which, eval_status says what happened."
+        },
+        "failed_rules": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "A rule this pass did not satisfy, named so it can be acted on."
+          },
+          "description": "Rule identifiers, not prose. Empty or absent when eval_status is passed."
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the model call began, ISO 8601."
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When it returned. The difference is measured latency and must never be a paced or displayed value."
+        }
+      },
+      "patternProperties": {
+        "^x_": {}
+      },
+      "additionalProperties": false
+    },
+    "extension": {
+      "type": "object",
+      "description": "A named, versioned extension attached at a declared in-point. Extensions carry domain structure (geography, jurisdiction, telemetry) that does not belong in the constitutional core. Acceptance of an extension is an explicit 512 decision, recorded here, not an implicit consequence of data appearing.",
+      "required": [
+        "extension_id",
+        "extension_version",
+        "accepted",
+        "data"
+      ],
+      "properties": {
+        "extension_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.]{2,64}$",
+          "description": "Registered identifier, e.g. 'cf.geography'. Unregistered structure belongs under ^x_, not here."
+        },
+        "extension_version": {
+          "$ref": "#/$defs/semver",
+          "description": "Version of the extension contract, independent of the core schema version."
+        },
+        "core_version_bound": {
+          "$ref": "#/$defs/semver",
+          "description": "Core version this extension declares compatibility with."
+        },
+        "accepted": {
+          "type": "boolean",
+          "description": "Explicit acceptance under 512. False or absent means the structure is present but not governed, and consumers must treat it as advisory."
+        },
+        "accepted_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When this extension was admitted to the object."
+        },
+        "accepted_by": {
+          "type": "string",
+          "description": "Party that admitted it."
+        },
+        "data": {
+          "type": "object",
+          "description": "Extension payload. Validated by the extension's own schema, not by this file."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "$comment": "Publication predicate. Draft and deleted objects may be incomplete. Anything that circulates must carry a model_card chain and must have retrievable normalised text for its spans to resolve against.",
+      "if": {
+        "not": {
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "draft",
+                "deleted"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "model_card"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "normalized_text_ref"
+            ]
+          },
+          {
+            "required": [
+              "passages"
+            ],
+            "properties": {
+              "passages": {
+                "minItems": 1
+              }
+            }
+          }
+        ],
+        "$comment": "status defaults to 'active', so an object omitting status is held to the published bar."
+      }
+    }
+  ],
+  "$comment": "Canonical identity is the URN above: it depends on no domain, no registrar and no company, and so cannot be broken by any party ceasing to exist. Convenience mirrors may be published at any URL; they are locations, not identity. The durable binding between an object and this contract is the digest of this file's exact bytes, carried per-object in schema_hash.\n\nGATE CONDITIONS THIS FILE CANNOT EXPRESS. JSON Schema validates shape, not truth. The following must be enforced by the pipeline, and an object that validates while failing any of them is worse than one that fails validation, because it looks correct:\n  a. This file parses. Validate the schema itself before every run; an unparseable schema cannot be delivered through the structured-output channel, so the run silently degrades to a prose attachment.\n  b. Every span resolves. Where a pass supplies passage text, the harness locates that text in the normalised string and writes the offsets; text that cannot be located is a fidelity failure and the pass fails.\n  c. source_recall meets the operator's threshold. Below it, the object is rejected before any semantic grading, because a claim graph over a fraction of a document cannot be assessed and its silences carry no information.\n  d. Every reference in a *_ref or *_refs field resolves to a record present in this object.\n  e. Every claim's section_ref is the section containing its passage_refs.\n  f. passages[].order is contiguous from zero within each section.\n  g. pass_id is unique within model_card, inputs[].hash resolves as described, and the pass graph is acyclic.\n  h. Hashes are computed by the pipeline over the exact bytes, never supplied by a model.\n  i. display_duplicate_of resolves to a passage in this object, is not self-referential, and forms no cycle. No claim's passage_refs names a passage that is itself a display duplicate.\n  j. Every operation listed in extraction_quality.glyph_normalization has been verified against the source. A declared normalisation that did not occur is a false warranty and fails the gate.\n  k. Where the extractor reports pages with no text layer, extraction_quality.pages_no_text_layer declares them. Silent page-level absence is indistinguishable from a blank page and must not circulate.\n\nADMISSION TEST FOR THE CORE. This file is deliberately hard to enter, and these rules travel with it so that anyone holding a copy — including a fork obtained from a mirror, with no access to the originating repository — knows why it is thin and what may be added to it.\n\nA proposed change enters the core only if every answer is yes:\n  1. Without it, can a consumer no longer verify an object is what it claims to be?\n  2. Is it equally true of a trade article, a legal brief and a service manual?\n  3. Will it read the same way in five years?\n  4. Would adding it later BREAK existing objects? (Inverted on purpose: if it could be added later cleanly, it belongs in an extension, not here.)\n  5. Does it describe the document rather than any operator's business?\n\nEvery proposal must additionally answer, in writing, 'why is this not an extension?' Most do not survive that sentence, which is the point. Domain structure attaches through extensions[]; private and experimental fields live under ^x_. Neither can alter this file.\n\nReleased versions are never modified. Corrections ship as a new version, and both are served in parallel until adopters migrate. Stewardship, succession and proposal process are deliberately NOT recorded here: they must be able to change, and live in GOVERNANCE.md, which carries its own digest in MANIFEST.md.",
+  "license": "Apache-2.0"
+}
