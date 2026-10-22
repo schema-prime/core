@@ -1,5 +1,19 @@
 # Core Schema — Changelog
 
+## v5.0.3 → v5.1.0
+
+Released file: `core.v5.json`, `$id` `urn:cko:core:5.1.0`, 82,185 bytes, SHA-256 `c4ca5e7f02efa782f28ff3baf6c83aae2dfa91efe7039ea5ea15b8932a7e8c4d`.
+
+**Added — identity declarations (top level, optional).** `original_name` (the source file's name exactly as received at intake, before any slug or hash naming), `document_slug` (the operator-assigned stable slug for the source document), and `run_id` (the run that produced the object or export). PRIME has always carried provenance-by-hash in `content_hash`; it carried no governed provenance-by-name, and consumers that needed the document's original name had nowhere lawful to put it — the Extraction Engine's bench supplied the fields by editing its vendored schema copies, which diverged the bench's schema from core. The fields are adopted into core here, deliberately: provenance of the source is a property of the document, not of any one operator's business, so it is not an extension.
+
+**Added — `x-512-declaration` (schema metadata).** The schema file now declares itself: artifact, canonical URN, version, status, the amendment path, and the evaluation rule a holder applies before use (hash the copy, compare with the pin published in `MANIFEST.md`, refuse and report on mismatch). The declaration deliberately does not carry the schema's own digest — a file cannot contain its own hash; the pin lives in `MANIFEST.md`.
+
+**Compatibility.** Additive only. No field was renamed, retyped, re-scoped or removed; no constraint was loosened or tightened. Every object valid under v5.0.3 remains valid under v5.1.0. Objects carrying the new identity fields require v5.1.0.
+
+**Reconciled — `$comment`.** The `$comment` now notes the one exception to its own rule that process is not recorded in this file: the declaration block is in-file by design, while stewardship, succession and proposal process in full remain in `GOVERNANCE.md`. No other `$comment` text changed.
+
+---
+
 ## v4 → v5.0.3
 
 Released file: `core.v5.json`, `$id` `urn:cko:core:5.0.3`, 80,071 bytes, SHA-256 `072fd266d83b183e26e27e01f5dd31ae395b5180cde62d84857cef698192ad8a`.

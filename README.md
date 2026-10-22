@@ -1,6 +1,6 @@
 # Core Knowledge Object
 
-`urn:cko:core:5.0.3` · Apache-2.0
+`urn:cko:core:5.1.0` · Apache-2.0
 
 A schema for representing an ingested source document, its extracted structure,
 and its evidentiary graph — in a form a machine can reason over and a human can

@@ -7,6 +7,7 @@ each object answers *what*.
 | --- | --- | --- | --- | --- | --- |
 | 4.0.0 | _tag pending_ | `451348f4dc832c6ca364bb2d932a3ba732cf7150579e2f12183008e5090e1ffc` | _pending_ | _pending_ | _pending_ |
 | 5.0.3 | _tag pending_ | `072fd266d83b183e26e27e01f5dd31ae395b5180cde62d84857cef698192ad8a` | _pending_ | _pending_ | _pending_ |
+| 5.1.0 | _tag pending_ | `c4ca5e7f02efa782f28ff3baf6c83aae2dfa91efe7039ea5ea15b8932a7e8c4d` | _pending_ | _pending_ | _pending_ |
 
 ## Governance digest
 
@@ -24,6 +25,11 @@ Digest above is of `core.v4.json` as built, 43,846 bytes.
 Digest below is of `core.v5.json` as built, 80,071 bytes. SHA-256 `072fd266d83b183e26e27e01f5dd31ae395b5180cde62d84857cef698192ad8a`. It supersedes candidate
 `2d8f3f25f3d908275275e1833b9f1423c52032fc26f6e9ffba2d9fa50627eed0`, which was never
 anchored: that build could not truthfully encode an ensemble execution graph.
+
+Digest for v5.1.0 is of `core.v5.json` as amended, 82,185 bytes. SHA-256 `c4ca5e7f02efa782f28ff3baf6c83aae2dfa91efe7039ea5ea15b8932a7e8c4d`. It adds the
+identity declarations (`original_name`, `document_slug`, `run_id`) and the
+`x-512-declaration` metadata block to v5.0.3; nothing else in the schema changed.
+Not yet tagged or anchored.
 
 ## Rules
 
